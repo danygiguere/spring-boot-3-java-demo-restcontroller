@@ -16,7 +16,7 @@ Guidance for AI agents working in this repository. Read this before making chang
 
 Spring Boot 3 + Java demo built on a **blocking** stack (Spring MVC, Spring Data JDBC, virtual threads), using
 **annotated controllers** (`@RestController`) with plain signatures. Blocking twin of
-`../spring-boot-3-java-demo-restcontroller` (same API, schema and tests).
+`../spring-boot-3-java-webflux-demo-restcontroller` (same API, schema and tests).
 
 **Stack:** Java 21 · Spring Boot 3.5 · Spring MVC · Spring Security (OAuth2 resource server, JWT) · Spring Data JDBC ·
 PostgreSQL · Flyway · Springdoc/OpenAPI · Testcontainers

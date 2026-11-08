@@ -2,7 +2,7 @@
 
 A demo project showcasing Spring Boot 3 development in Java with **annotated controllers** (`@RestController`) on a
 classic **blocking** stack: Spring MVC, Spring Data JDBC and **virtual threads**. It is the blocking twin of
-[spring-boot-3-java-demo-restcontroller](../spring-boot-3-java-demo-restcontroller) (same API, schema and tests; only
+[spring-boot-3-java-webflux-demo-restcontroller](../spring-boot-3-java-webflux-demo-restcontroller) (same API, schema and tests; only
 the web and data layers differ), so the two can be compared side by side. Built on the domain of
 [spring-boot-java-audit-skills-demo](../spring-boot-java-audit-skills-demo), and written to respect every invariant of
 [audit-skills](../../audit-skills) (see [AGENTS.md](AGENTS.md)).
@@ -39,7 +39,7 @@ Spring Data JDBC · PostgreSQL · Flyway · Springdoc OpenAPI · Testcontainers
 
 ## Blocking vs reactive
 
-| | This project | [Reactive twin](../spring-boot-3-java-demo-restcontroller) |
+| | This project | [Reactive twin](../spring-boot-3-java-webflux-demo-restcontroller) |
 |---|---|---|
 | Web | Spring MVC (Tomcat, servlet) | WebFlux (Netty) |
 | Concurrency | a virtual thread per request | event loop + `Mono`/`Flux` |
