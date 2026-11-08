@@ -1,0 +1,67 @@
+package com.example.restcontrollerdemo.support;
+
+import com.example.restcontrollerdemo.dto.TokenResponse;
+import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.reactive.server.WebTestClient;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
+
+/**
+ * Base class for integration tests: one PostgreSQL Testcontainer for the whole suite, and the dev profile, so the
+ * deterministic seed ({@code db/seed/R__dev_seed.sql}) and {@code /auth/dev-token} are available.
+ *
+ * <p>Tests that write create their own posts (as users 3, 4 and 12) and never change seeded posts, likes or the
+ * users 1, 2 and 11, so seed-based assertions hold in any order.
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("dev")
+public abstract class IntegrationTest {
+
+    public static final String ALICE = "alice@example.com"; // user 1, enterprise 1
+    public static final String BOB = "bob@example.com"; // user 2, enterprise 1
+    public static final String EVE = "eve@example.com"; // user 11, enterprise 2
+    public static final String AUTHOR = "user3@example.com"; // user 3, enterprise 1
+    public static final String COLLEAGUE = "user4@example.com"; // user 4, enterprise 1
+    public static final String OUTSIDER = "user12@example.com"; // user 12, enterprise 2
+
+    static final PostgreSQLContainer<?> POSTGRES =
+            new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine")).withReuse(true);
+
+    static {
+        POSTGRES.start();
+    }
+
+    @DynamicPropertySource
+    static void registerProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+    }
+
+    @Autowired
+    protected WebTestClient webTestClient;
+
+    /** A client authenticated as the seeded user with this email. */
+    protected WebTestClient as(String email) {
+        String token = webTestClient
+                .post()
+                .uri("/auth/dev-token")
+                .bodyValue(Map.of("email", email))
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody(TokenResponse.class)
+                .returnResult()
+                .getResponseBody()
+                .accessToken();
+        return webTestClient
+                .mutate()
+                .defaultHeader("Authorization", "Bearer " + token)
+                .build();
+    }
+}
