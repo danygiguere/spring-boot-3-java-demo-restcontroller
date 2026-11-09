@@ -54,12 +54,6 @@ gradle.taskGraph.afterTask {
     }
 }
 
-// bootRun is local development: dev profile (seed data, dev tokens, Swagger UI) unless overridden.
-// A packaged jar starts with no profile, so none of the dev-only features are reachable in production.
-tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
-    systemProperty("spring.profiles.active", System.getenv("SPRING_PROFILES_ACTIVE") ?: "dev")
-}
-
 tasks.withType<Test> {
     useJUnitPlatform()
 }

@@ -5,10 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.example.restcontrollerdemo.dto.PostDetails;
 import com.example.restcontrollerdemo.dto.PostSummary;
 import com.example.restcontrollerdemo.support.IntegrationTest;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.reactive.server.WebTestClient;
@@ -105,13 +105,11 @@ class PostControllerTest extends IntegrationTest {
                 .isBadRequest()
                 .expectBody()
                 .jsonPath("$.type")
-                .isEqualTo("/errors/param-invalid")
-                .jsonPath("$.errors['Idempotency-Key'][0]")
-                .isEqualTo("This parameter is required");
+                .isEqualTo("/errors/header-required");
     }
 
     @Test
-    void create_malformedIdempotencyKey_returns422() {
+    void create_malformedIdempotencyKey_returns400() {
         as(AUTHOR)
                 .post()
                 .uri("/posts")
@@ -119,10 +117,10 @@ class PostControllerTest extends IntegrationTest {
                 .bodyValue(NEW_POST)
                 .exchange()
                 .expectStatus()
-                .isEqualTo(422)
+                .isBadRequest()
                 .expectBody()
-                .jsonPath("$.errors['Idempotency-Key'][0]")
-                .isEqualTo("Must be 8 to 128 characters: letters, digits, '-' or '_'");
+                .jsonPath("$.type")
+                .isEqualTo("/errors/idempotency-key-invalid");
     }
 
     @Test
@@ -145,7 +143,9 @@ class PostControllerTest extends IntegrationTest {
 
     @Test
     void create_invalidBody_returns422WithFieldErrors() {
-        List<String> elevenImages = Collections.nCopies(11, "https://images.example.com/x.jpg");
+        List<String> elevenImages = IntStream.range(0, 11)
+                .mapToObj(i -> "https://images.example.com/" + i + ".jpg")
+                .toList();
         as(AUTHOR)
                 .post()
                 .uri("/posts")
@@ -171,6 +171,22 @@ class PostControllerTest extends IntegrationTest {
                 .expectBody()
                 .jsonPath("$.errors['imageUrls[0]'][0]")
                 .isEqualTo("Image URL must be a valid https URL");
+    }
+
+    @Test
+    void create_duplicateImageUrls_returns422() {
+        String url = "https://images.example.com/x.jpg";
+        as(AUTHOR)
+                .post()
+                .uri("/posts")
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .bodyValue(Map.of("content", "ok", "imageUrls", List.of(url, url)))
+                .exchange()
+                .expectStatus()
+                .isEqualTo(422)
+                .expectBody()
+                .jsonPath("$.errors.imageUrls[0]")
+                .isEqualTo("Image URLs must be unique");
     }
 
     @Test

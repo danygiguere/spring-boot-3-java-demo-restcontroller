@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-@Schema(description = "Dev token request (dev profile only)")
+@Schema(description = "Dev token request (DEV_TOKEN_ENABLED only)")
 public record DevTokenRequest(
         @NotBlank(message = "{auth.email.required}")
                 @Email(message = "{auth.email.invalid}")

@@ -1,10 +1,13 @@
-# Production-safe defaults: no profile active, no seed data, no dev tokens, no Swagger UI.
-# Local development runs with the dev profile (see application-dev.yml and `./gradlew bootRun`).
+# Single config for every environment. Defaults are production-safe: no seed data, no dev tokens, no Swagger UI.
+# Local values come from .env (see .env.example); deployed environments set real environment variables.
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  flyway:
+    # Local: add classpath:db/seed (R__dev_seed.sql EMPTIES the tables before filling them).
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration}
   threads:
     virtual:
       # Each request runs on a virtual thread: blocking JDBC calls park it cheaply instead of holding a platform
@@ -17,14 +20,16 @@ spring:
 
 springdoc:
   api-docs:
-    enabled: false
+    enabled: ${SWAGGER_ENABLED:false}
     path: /v3/api-docs
   swagger-ui:
-    enabled: false
+    enabled: ${SWAGGER_ENABLED:false}
     path: /swagger-ui.html
 
 server:
   port: ${SERVER_PORT:8080}
+  # Empty = all interfaces. DEV_TOKEN_ENABLED requires 127.0.0.1.
+  address: ${SERVER_ADDRESS:}
 
 app:
   # Request body cap (see RequestBodyLimitFilter). The largest valid body (post: 5000 chars + 10 image URLs) is well
@@ -35,4 +40,7 @@ app:
     secret: ${JWT_SECRET:}
     issuer: ${JWT_ISSUER:blocking-restcontroller-demo}
     audience: ${JWT_AUDIENCE:blocking-restcontroller-demo-api}
-    ttl: 15m
+    ttl: ${JWT_TTL:15m}
+  dev-token:
+    # Passwordless POST /auth/dev-token. Local only.
+    enabled: ${DEV_TOKEN_ENABLED:false}

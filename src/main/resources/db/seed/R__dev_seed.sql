@@ -1,5 +1,5 @@
--- Development seed (dev profile only). Repeatable migration: Flyway re-runs it whenever its
--- content changes, and it starts by EMPTYING every table — never point it at a real database.
+-- Development seed (only when FLYWAY_LOCATIONS includes classpath:db/seed). Repeatable migration: Flyway re-runs it
+-- whenever its content changes, and it starts by EMPTYING every table — never point it at a real database.
 --
 -- Deterministic volumes:
 --   5 enterprises

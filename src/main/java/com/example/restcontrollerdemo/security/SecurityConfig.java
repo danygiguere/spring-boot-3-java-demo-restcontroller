@@ -43,12 +43,12 @@ public class SecurityConfig {
 
     /** The only routes reachable without a token. Everything else is denied by default. */
     static final String[] PUBLIC_PATHS = {
-        // API docs (disabled outside the dev profile)
+        // API docs (disabled unless SWAGGER_ENABLED)
         "/swagger-ui.html",
         "/swagger-ui/**",
         "/webjars/**",
         "/v3/api-docs/**",
-        // Dev token endpoint (exists only in the dev profile)
+        // Dev token endpoint (exists only with DEV_TOKEN_ENABLED)
         "/auth/dev-token"
     };
 

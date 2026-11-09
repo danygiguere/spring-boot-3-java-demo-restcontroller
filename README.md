@@ -28,7 +28,7 @@ the web and data layers differ), so the two can be compared side by side. Built 
   pagination and body size (`RequestBodyLimitFilter`)
 - **Custom validators** — `@SafeText` (field-level: rejects HTML tags and control characters) and `@NoDuplicates`
   (collection-level) in `validation/`, each a `ConstraintValidator` with localized messages; unit-tested without Spring
-- **Swagger / OpenAPI** — Springdoc, with a bearer-token **Authorize** button (dev profile only)
+- **Swagger / OpenAPI** — Springdoc, with a bearer-token **Authorize** button (`SWAGGER_ENABLED` only)
 - **Spotless** — palantir-java-format; a formatting violation fails the build
 - **Testcontainers** — integration tests against a real PostgreSQL
 
@@ -93,7 +93,7 @@ caller's enterprise answers **404**, exactly like a missing one.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/auth/dev-token` | Token for a seeded user, no password — **dev profile only** |
+| `POST` | `/auth/dev-token` | Token for a seeded user, no password — **`DEV_TOKEN_ENABLED` only** |
 | `GET` | `/enterprises/current` | The caller's enterprise |
 | `GET` | `/users/me` | The caller (with email) |
 | `PUT` | `/users/me/profile` | Create or replace the caller's profile |
@@ -123,22 +123,30 @@ key and body returns the original post with `Idempotent-Replayed: true`; the sam
 
 ## Environment Variables
 
-Local development uses `.env` support through `spring-dotenv`. Copy `.env.example` to `.env`.
+One `application.yml` for every environment, no profiles. Locally, values come from `.env` (through `spring-dotenv`,
+development only); deployed environments set real environment variables. Copy `.env.example` to `.env`.
 
-| Variable | Default | Role |
-|---|---|---|
-| `DB_NAME` / `DB_USERNAME` / `DB_PASSWORD` | dev profile: `demo_spring_java_blocking_restcontroller` / `postgres` / `postgres`; none otherwise | Database |
-| `DB_HOST` / `DB_PORT` | `localhost` / `5432` | Database address (`DB_HOST` outside the dev profile) |
-| `SERVER_PORT` | dev: `8089`, otherwise `8080` | HTTP port |
-| `JWT_SECRET` | dev: a public dev key; **required** otherwise (≥ 32 bytes) | HS256 verification key |
-| `JWT_ISSUER` / `JWT_AUDIENCE` | `blocking-restcontroller-demo` / `blocking-restcontroller-demo-api` | Expected `iss` / `aud` |
+Defaults are production-safe: an unset variable never enables a local-only feature.
+
+| Variable | Default | `.env.example` | Role |
+|---|---|---|---|
+| `DB_NAME` / `DB_USERNAME` / `DB_PASSWORD` | **required** | `spring_boot_3_java_demo_restcontroller` / `postgres` / *(empty: set yours)* | Database |
+| `DB_HOST` / `DB_PORT` | `localhost` / `5432` | — / `5432` | Database address |
+| `SERVER_PORT` | `8080` | `8089` | HTTP port |
+| `JWT_SECRET` | **required** (≥ 32 bytes) | generate: `openssl rand -base64 48` | HS256 verification key |
+| `JWT_ISSUER` / `JWT_AUDIENCE` | `blocking-restcontroller-demo` / `blocking-restcontroller-demo-api` | — | Expected `iss` / `aud` |
+| `JWT_TTL` | `15m` | `1h` | Dev token lifetime |
+| `FLYWAY_LOCATIONS` | `classpath:db/migration` | `+ classpath:db/seed` | Seed data (`R__dev_seed.sql` **empties tables**) |
+| `SWAGGER_ENABLED` | `false` | `true` | Swagger UI / API docs |
+| `DEV_TOKEN_ENABLED` | `false` | `true` | `POST /auth/dev-token`; requires a loopback `SERVER_ADDRESS` |
+| `SERVER_ADDRESS` | all interfaces | `127.0.0.1` | Bind address |
 
 ## Getting Started
 
-1. Ensure a local PostgreSQL instance is running and create the `demo_spring_java_blocking_restcontroller` database
+1. Ensure a local PostgreSQL instance is running and create the `spring_boot_3_java_demo_restcontroller` database
    > 💡 Need a quick local database? Use [Dev Services](https://github.com/danygiguere/dev_services) to spin up a dockerized PostgreSQL instance.
-2. Copy `.env.example` to `.env` and adjust it to your local PostgreSQL settings
-3. Run `./gradlew bootRun` — it starts the **dev** profile: Flyway applies the schema and the deterministic seed
+2. Copy `.env.example` to `.env`, set `JWT_SECRET` and adjust it to your local PostgreSQL settings
+3. Run `./gradlew bootRun` (or the main class in your IDE) — Flyway applies the schema and the deterministic seed
 4. Open Swagger UI at **http://localhost:8089/swagger-ui.html**, call `POST /auth/dev-token` with
    `{"email":"alice@example.com"}`, and paste the `accessToken` into **Authorize**
 
@@ -162,15 +170,16 @@ Seeded users (5 enterprises × 10 users, 200 posts, 300 images, 598 likes):
 
 > In-memory databases are fine for quick prototypes, or for tests that don't touch SQL. As soon as the code depends on real database behavior, use the real thing.
 
-### Profiles
+### Local vs deployed
 
-| | `dev` (`bootRun`, tests) | none (packaged jar) |
+| | Local (`.env`, tests) | Deployed (env vars unset) |
 |---|---|---|
 | Seed data (`db/seed/R__dev_seed.sql`, empties tables) | ✅ | ❌ |
 | `POST /auth/dev-token` | ✅ | ❌ (404) |
 | Swagger UI / API docs | ✅ | ❌ (404) |
 | Bind address | `127.0.0.1` | all interfaces |
-| `JWT_SECRET` | optional (public dev key) | required, startup fails otherwise |
+
+`.env` is read only in development (`spring-dotenv` is `developmentOnly`): the packaged jar ignores it.
 
 In production, tokens come from your identity provider: this application only verifies them. To use an asymmetric
 provider (RS256 + JWKS), replace the decoder in `SecurityConfig` with `NimbusJwtDecoder.withJwkSetUri(...)`
@@ -188,7 +197,7 @@ stores the token in the `token` collection variable used by every other request.
 | Command | Description |
 |---|---|
 | `./gradlew clean build` | Check formatting with Spotless, compile, test and package |
-| `./gradlew bootRun` | Start the application (dev profile) |
+| `./gradlew bootRun` | Start the application (reads `.env`) |
 | `./gradlew test` | Run tests (Docker required for Testcontainers) |
 | `./gradlew spotlessApply` | Auto-format all source files |
 | `./gradlew spotlessCheck` | Check formatting without modifying files (CI) |

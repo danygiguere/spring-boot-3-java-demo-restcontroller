@@ -2,7 +2,7 @@
   "info": {
     "name": "Spring Boot 3 Java Demo — Blocking RestController",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Run 'Get dev token' first (dev profile). It stores the token used by every request."
+    "description": "Run 'Get dev token' first (DEV_TOKEN_ENABLED). It stores the token used by every request."
   },
   "auth": {
     "type": "bearer",

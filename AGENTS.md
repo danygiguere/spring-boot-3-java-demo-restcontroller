@@ -29,7 +29,7 @@ PostgreSQL · Flyway · Springdoc/OpenAPI · Testcontainers
 | Command | Description |
 |---|---|
 | `./gradlew clean build` | Spotless check, compile, test, package (full CI gate) |
-| `./gradlew bootRun` | Start the application with the `dev` profile |
+| `./gradlew bootRun` | Start the application (reads `.env`) |
 | `./gradlew test` | Run tests (Docker required) |
 | `./gradlew spotlessApply` | Auto-format all sources |
 | `./gradlew spotlessCheck` | Verify formatting (runs before `compileJava`) |
@@ -77,13 +77,14 @@ limit) and joined through maps (`PostSummaryLoader`). Keep transactions short: r
 - The caller is `AuthenticatedUser` (`sub` → `userId`, `enterpriseId` claim) from a verified JWT. Never take a user or
   enterprise id from the request for authorization or ownership.
 - Out-of-tenant resources are **404**; in-tenant resources the caller may not change are **403**.
-- `dev` profile only: seed data, `POST /auth/dev-token`, Swagger UI, public dev JWT key, loopback bind. The default
-  (no profile) is production-safe.
+- No Spring profiles: one `application.yml`, env vars with production-safe defaults (`.env` locally). Local-only
+  features are opt-in: `FLYWAY_LOCATIONS` (seed), `SWAGGER_ENABLED`, `DEV_TOKEN_ENABLED` (`@DevTokenEnabled`; startup
+  fails unless `SERVER_ADDRESS` is loopback). `JWT_SECRET` has no default.
 
 ## Testing
 
-- Integration tests extend `support/IntegrationTest`: one reusable PostgreSQL Testcontainer, `dev` profile (seed +
-  dev tokens), `@SpringBootTest(webEnvironment = RANDOM_PORT)` with `WebTestClient`.
+- Integration tests extend `support/IntegrationTest`: one reusable PostgreSQL Testcontainer, the local settings as
+  `@SpringBootTest` properties (seed + dev tokens + Swagger), `RANDOM_PORT` with `WebTestClient`.
 - `as(email)` returns a client authenticated as a seeded user.
 - Tests that write create their own posts as users 3, 4 and 12; never change seeded posts/likes or users 1, 2, 11, so
   seed-based assertions hold in any order.

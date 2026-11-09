@@ -6,6 +6,7 @@ import com.example.restcontrollerdemo.dto.PostDetails;
 import com.example.restcontrollerdemo.dto.PostSummary;
 import com.example.restcontrollerdemo.dto.UpdatePostRequest;
 import com.example.restcontrollerdemo.dto.UserResponse;
+import com.example.restcontrollerdemo.exception.AppException;
 import com.example.restcontrollerdemo.security.AuthenticatedUser;
 import com.example.restcontrollerdemo.service.CreatedPost;
 import com.example.restcontrollerdemo.service.PostService;
@@ -14,11 +15,11 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import java.net.URI;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.hibernate.validator.constraints.Range;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PostController {
 
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+    private static final Pattern IDEMPOTENCY_KEY = Pattern.compile("[A-Za-z0-9_-]{8,128}");
     public static final String REPLAYED_HEADER = "Idempotent-Replayed";
 
     private final PostService postService;
@@ -69,12 +71,11 @@ public class PostController {
             responses = @ApiResponse(responseCode = "201", description = "Created (or replayed)"))
     public ResponseEntity<PostDetails> create(
             AuthenticatedUser me,
-            @Parameter(example = "3f8a2c4e-9b1d-4e6f-a5c7-2d9e8b1f0a3c")
-                    @RequestHeader(IDEMPOTENCY_KEY_HEADER)
-                    @Pattern(regexp = "[A-Za-z0-9_-]{8,128}", message = "{idempotency.key.pattern}")
+            @Parameter(required = true, example = "3f8a2c4e-9b1d-4e6f-a5c7-2d9e8b1f0a3c")
+                    @RequestHeader(name = IDEMPOTENCY_KEY_HEADER, required = false)
                     String idempotencyKey,
             @Valid @RequestBody CreatePostRequest request) {
-        CreatedPost created = postService.create(me, idempotencyKey, request);
+        CreatedPost created = postService.create(me, validIdempotencyKey(idempotencyKey), request);
         return ResponseEntity.created(URI.create("/posts/" + created.post().id()))
                 .header(REPLAYED_HEADER, String.valueOf(created.replayed()))
                 .body(created.post());
@@ -133,5 +134,16 @@ public class PostController {
     @Operation(operationId = "unlikePost", summary = "Remove the authenticated user's like (idempotent)")
     public void unlike(AuthenticatedUser me, @PathVariable @Positive(message = "{param.positive}") long id) {
         postService.unlike(me, id);
+    }
+
+    /** Required: without it, a retried or double-submitted create would publish the post twice. */
+    private static String validIdempotencyKey(String key) {
+        if (key == null || key.isBlank()) {
+            throw new AppException.BadRequest("error.header.required", IDEMPOTENCY_KEY_HEADER);
+        }
+        if (!IDEMPOTENCY_KEY.matcher(key).matches()) {
+            throw new AppException.BadRequest("error.idempotency.key.invalid");
+        }
+        return key;
     }
 }
