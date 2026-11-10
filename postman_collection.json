@@ -80,39 +80,6 @@
       ]
     },
     {
-      "name": "Enterprises",
-      "item": [
-        {
-          "name": "Current enterprise",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/enterprises/current",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "enterprises",
-                "current"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
       "name": "Users",
       "item": [
         {
@@ -209,18 +176,18 @@
           ]
         },
         {
-          "name": "Get user of another enterprise (404)",
+          "name": "Get unknown user (404)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/users/11",
+              "raw": "{{baseUrl}}/users/999999",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "users",
-                "11"
+                "999999"
               ]
             }
           },
@@ -352,6 +319,41 @@
                 "users",
                 "1",
                 "liked-posts"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "User images",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/1/images?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "1",
+                "images"
               ],
               "query": [
                 {
@@ -662,18 +664,18 @@
           ]
         },
         {
-          "name": "Post of another enterprise (404)",
+          "name": "Get unknown post (404)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/posts/41",
+              "raw": "{{baseUrl}}/posts/999999",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "posts",
-                "41"
+                "999999"
               ]
             }
           },

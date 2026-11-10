@@ -15,8 +15,8 @@ import org.testcontainers.utility.DockerImageName;
  * {@code .env.example}, so the deterministic seed ({@code db/seed/R__dev_seed.sql}), {@code /auth/dev-token} and
  * Swagger are available.
  *
- * <p>Tests that write create their own posts (as users 3, 4 and 12) and never change seeded posts, likes or the
- * users 1, 2 and 11, so seed-based assertions hold in any order.
+ * <p>Tests that write create their own posts (as users 3 and 4) and never change seeded posts, likes or the users
+ * 1 and 2, so seed-based assertions hold in any order.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -30,12 +30,10 @@ import org.testcontainers.utility.DockerImageName;
         })
 public abstract class IntegrationTest {
 
-    public static final String ALICE = "alice@example.com"; // user 1, enterprise 1
-    public static final String BOB = "bob@example.com"; // user 2, enterprise 1
-    public static final String EVE = "eve@example.com"; // user 11, enterprise 2
-    public static final String AUTHOR = "user3@example.com"; // user 3, enterprise 1
-    public static final String COLLEAGUE = "user4@example.com"; // user 4, enterprise 1
-    public static final String OUTSIDER = "user12@example.com"; // user 12, enterprise 2
+    public static final String ALICE = "alice@example.com"; // user 1
+    public static final String BOB = "bob@example.com"; // user 2
+    public static final String AUTHOR = "user3@example.com"; // user 3
+    public static final String OTHER_USER = "user4@example.com"; // user 4
 
     static final PostgreSQLContainer<?> POSTGRES =
             new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine")).withReuse(true);
@@ -49,6 +47,9 @@ public abstract class IntegrationTest {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.flyway.user", POSTGRES::getUsername);
+        registry.add("spring.flyway.password", POSTGRES::getPassword);
     }
 
     @Autowired

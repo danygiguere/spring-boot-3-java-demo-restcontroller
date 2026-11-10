@@ -15,10 +15,10 @@ the web and data layers differ), so the two can be compared side by side. Built 
 - **`AuthenticatedUser me` parameters** — resolved from the verified token by a custom argument resolver
 - **Virtual threads** — one virtual thread per request (`spring.threads.virtual.enabled`): straightforward blocking
   code that scales without a reactive stack
-- **Plain sequential code** — bulk loads + hash-map joins for N+1-free lists, `TransactionTemplate` for atomic
-  multi-table writes
+- **Plain sequential code** — one query per list page (author and counts included, no N+1), `TransactionTemplate`
+  for atomic multi-table writes
 - **JWT resource server** — HS256 pinned; `exp`, `iss`, `aud` and claim shapes validated; deny-by-default routes
-- **Tenant isolation** — every query is scoped to the caller's enterprise, taken from the verified token
+- **Ownership** — writes are restricted to the owner, taken from the verified token, never from the request
 - **Idempotent writes** — required `Idempotency-Key` on post creation; likes and profile upserts are naturally idempotent
 - **Global exception handler** — `@RestControllerAdvice` (also reached by filter errors: 401/403/413), RFC 9457 problem details (`application/problem+json`) with a stable `type`, a
   localized `detail` and a `correlationId` matching the `X-Correlation-Id` header; only `AppException` messages reach
@@ -29,6 +29,7 @@ the web and data layers differ), so the two can be compared side by side. Built 
 - **Custom validators** — `@SafeText` (field-level: rejects HTML tags and control characters) and `@NoDuplicates`
   (collection-level) in `validation/`, each a `ConstraintValidator` with localized messages; unit-tested without Spring
 - **Swagger / OpenAPI** — Springdoc, with a bearer-token **Authorize** button (`SWAGGER_ENABLED` only)
+- **Bounded database access** — JDBC (HikariCP) pool sizing, connection timeout, statement and lock timeouts
 - **Spotless** — palantir-java-format; a formatting violation fails the build
 - **Testcontainers** — integration tests against a real PostgreSQL
 
@@ -52,28 +53,27 @@ Spring Data JDBC · PostgreSQL · Flyway · Springdoc OpenAPI · Testcontainers
 
 ## Data Model
 
-A small enterprise social network: each enterprise has its users, who have a profile, publish posts with images, and
-like posts.
+A small social network: users have a profile, publish posts with images, and like posts.
 
 ```
-┌──────────────┐ 1    N ┌──────────────┐ 1    N ┌──────────────┐ 1    N ┌──────────────┐
-│  Enterprise  │───────►│     User     │───────►│     Post     │───────►│    Image     │
-│──────────────│        │──────────────│        │──────────────│        │──────────────│
-│ id           │        │ id           │        │ id           │        │ id           │
-│ name         │        │ enterprise_id│        │ user_id      │        │ post_id      │
-└──────────────┘        │ name         │        │ content      │        │ url          │
-                        │ email        │        │ created_at   │        │ position     │
-                        └──┬────────┬──┘        └──────┬───────┘        └──────────────┘
-                         1 │        │ N                │ N
-                         1 ▼        │   ┌──────────┐   │
-                ┌──────────────┐    └──►│post_likes│◄──┘
-                │   Profile    │        │──────────│
-                │──────────────│        │ user_id  │
-                │ id           │        │ post_id  │
-                │ user_id (UQ) │        └──────────┘
-                │ bio          │
-                │ avatar_url   │
-                └──────────────┘
+┌──────────────┐ 1    N ┌──────────────┐ 1    N ┌──────────────┐
+│     User     │───────►│     Post     │───────►│    Image     │
+│──────────────│        │──────────────│        │──────────────│
+│ id           │        │ id           │        │ id           │
+│ name         │ 1      │ user_id      │        │ post_id      │
+│ email        │──┐     │ content      │        │ url          │
+└──────┬───────┘  │     │ created_at   │        │ position     │
+     1 │          │     └──────┬───────┘        └──────────────┘
+       │          │            │ 1
+     1 ▼          │ N        N ▼
+┌──────────────┐  │     ┌──────────────┐
+│   Profile    │  └────►│  post_likes  │
+│──────────────│        │──────────────│
+│ id           │        │ user_id      │
+│ user_id (UQ) │        │ post_id      │
+│ bio          │        └──────────────┘
+│ avatar_url   │
+└──────────────┘
 ```
 
 | Relation | Example | Endpoint |
@@ -81,28 +81,28 @@ like posts.
 | **belongsTo** | Post → User | `GET /posts/{id}` (`author`) |
 | **hasOne** | User → Profile | `GET /users/{id}/profile` |
 | **hasMany** | User → Posts, Post → Images | `GET /users/{id}/posts`, `GET /posts/{id}/images` |
-| **hasManyThrough** | Enterprise → Posts, through Users | `GET /posts` (the enterprise feed) |
+| **hasManyThrough** | User → Images, through Posts | `GET /users/{id}/images` |
 | **manyToMany** | User ↔ Post, through `post_likes` | `GET /users/{id}/liked-posts`, `GET /posts/{id}/likes` |
 
 An `idempotency_keys` table backs `POST /posts` retries (see `V1__init.sql`).
 
 ## API
 
-Every route requires `Authorization: Bearer <token>` except the docs and `/auth/dev-token`. A resource outside the
-caller's enterprise answers **404**, exactly like a missing one.
+Every route requires `Authorization: Bearer <token>` except the docs and `/auth/dev-token`. Every resource is
+readable by every user; a missing one answers **404**, a write by someone other than the owner **403**.
 
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/auth/dev-token` | Token for a seeded user, no password — **`DEV_TOKEN_ENABLED` only** |
-| `GET` | `/enterprises/current` | The caller's enterprise |
 | `GET` | `/users/me` | The caller (with email) |
 | `PUT` | `/users/me/profile` | Create or replace the caller's profile |
-| `GET` | `/users?afterId=&limit=` | Users of the caller's enterprise, oldest first |
-| `GET` | `/users/{id}` | A colleague (no email) |
-| `GET` | `/users/{id}/profile` | A colleague's profile |
-| `GET` | `/users/{id}/posts?beforeId=&limit=` | A colleague's posts, newest first |
-| `GET` | `/users/{id}/liked-posts?beforeId=&limit=` | Posts a colleague likes |
-| `GET` | `/posts?beforeId=&limit=` | Enterprise feed, newest first, with image and like counts |
+| `GET` | `/users?afterId=&limit=` | Users, oldest first |
+| `GET` | `/users/{id}` | A user (no email) |
+| `GET` | `/users/{id}/profile` | A user's profile |
+| `GET` | `/users/{id}/posts?beforeId=&limit=` | A user's posts, newest first |
+| `GET` | `/users/{id}/liked-posts?beforeId=&limit=` | Posts a user likes |
+| `GET` | `/users/{id}/images?beforeId=&limit=` | Images of a user's posts, newest first |
+| `GET` | `/posts?beforeId=&limit=` | Feed, newest first, with image and like counts |
 | `POST` | `/posts` | Publish a post with up to 10 images — requires `Idempotency-Key` |
 | `GET` | `/posts/{id}` | A post with author, images and like count |
 | `PUT` | `/posts/{id}` | Edit content — author only (403 otherwise) |
@@ -140,6 +140,11 @@ Defaults are production-safe: an unset variable never enables a local-only featu
 | `SWAGGER_ENABLED` | `false` | `true` | Swagger UI / API docs |
 | `DEV_TOKEN_ENABLED` | `false` | `true` | `POST /auth/dev-token`; requires a loopback `SERVER_ADDRESS` |
 | `SERVER_ADDRESS` | all interfaces | `127.0.0.1` | Bind address |
+| `DB_POOL_INITIAL_SIZE` / `DB_POOL_MAX_SIZE` | `5` / `20` | — | Idle / max connections per instance (HikariCP) |
+| `DB_POOL_MAX_ACQUIRE_TIME_MS` | `5000` | — | Wait for a free connection before failing |
+| `DB_CONNECT_TIMEOUT_SECONDS` | `5` | — | Opening a connection |
+| `DB_POOL_MAX_IDLE_TIME_MS` / `DB_POOL_MAX_LIFE_TIME_MS` | `600000` / `1800000` | — | Connection recycling |
+| `DB_STATEMENT_TIMEOUT` / `DB_LOCK_WAIT_TIMEOUT` | `5s` / `2s` | — | Server-side cancel (app connections only, not Flyway) |
 
 ## Getting Started
 
@@ -150,14 +155,13 @@ Defaults are production-safe: an unset variable never enables a local-only featu
 4. Open Swagger UI at **http://localhost:8089/swagger-ui.html**, call `POST /auth/dev-token` with
    `{"email":"alice@example.com"}`, and paste the `accessToken` into **Authorize**
 
-Seeded users (5 enterprises × 10 users, 200 posts, 300 images, 598 likes):
+Seeded users (50 users, 200 posts, 300 images, 598 likes):
 
-| User | Email | Enterprise | Posts |
-|---|---|---|---|
-| Alice (1) | `alice@example.com` | 1 | 1–4 |
-| Bob (2) | `bob@example.com` | 1 | 5–8 |
-| Eve (11) | `eve@example.com` | 2 | 41–44 |
-| User *n* | `user<n>@example.com` | (n − 1) / 10 + 1 | 4(n − 1) + 1 to 4n |
+| User | Email | Posts |
+|---|---|---|
+| Alice (1) | `alice@example.com` | 1–4 |
+| Bob (2) | `bob@example.com` | 5–8 |
+| User *n* | `user<n>@example.com` | 4(n − 1) + 1 to 4n |
 
 ### Why a dockerized database instead of an in-memory one (like H2)?
 

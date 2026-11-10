@@ -37,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/posts")
-@Tag(name = "Posts", description = "Posts of the caller's enterprise; writes are restricted to the author")
+@Tag(name = "Posts", description = "Posts are visible to every user; writes are restricted to the author")
 public class PostController {
 
     public static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -51,14 +51,13 @@ public class PostController {
     }
 
     @GetMapping
-    @Operation(operationId = "getFeed", summary = "The enterprise feed, newest first (hasManyThrough)")
+    @Operation(operationId = "getFeed", summary = "The feed, newest first, with image and like counts")
     public List<PostSummary> feed(
-            AuthenticatedUser me,
             @RequestParam(required = false) @Positive(message = "{param.positive}") Long beforeId,
             @RequestParam(defaultValue = Pagination.DEFAULT_LIMIT)
                     @Range(min = 1, max = Pagination.MAX_LIMIT, message = "{param.limit.range}")
                     int limit) {
-        return postService.feed(me, Pagination.before(beforeId), limit);
+        return postService.feed(Pagination.before(beforeId), limit);
     }
 
     /** Required key: without it, a retried or double-submitted create would publish the post twice. */
@@ -83,8 +82,8 @@ public class PostController {
 
     @GetMapping("/{id}")
     @Operation(operationId = "getPostById", summary = "Get a post with its author, images and like count")
-    public PostDetails findById(AuthenticatedUser me, @PathVariable @Positive(message = "{param.positive}") long id) {
-        return postService.findById(me, id);
+    public PostDetails findById(@PathVariable @Positive(message = "{param.positive}") long id) {
+        return postService.findById(id);
     }
 
     @PutMapping("/{id}")
@@ -105,21 +104,19 @@ public class PostController {
 
     @GetMapping("/{id}/images")
     @Operation(operationId = "getPostImages", summary = "List a post's images in display order (hasMany)")
-    public List<ImageResponse> findImages(
-            AuthenticatedUser me, @PathVariable @Positive(message = "{param.positive}") long id) {
-        return postService.findImages(me, id);
+    public List<ImageResponse> findImages(@PathVariable @Positive(message = "{param.positive}") long id) {
+        return postService.findImages(id);
     }
 
     @GetMapping("/{id}/likes")
     @Operation(operationId = "getPostLikers", summary = "List users who like a post (manyToMany)")
     public List<UserResponse> findLikers(
-            AuthenticatedUser me,
             @PathVariable @Positive(message = "{param.positive}") long id,
             @RequestParam(required = false) @PositiveOrZero(message = "{param.positiveOrZero}") Long afterId,
             @RequestParam(defaultValue = Pagination.DEFAULT_LIMIT)
                     @Range(min = 1, max = Pagination.MAX_LIMIT, message = "{param.limit.range}")
                     int limit) {
-        return postService.findLikers(me, id, Pagination.after(afterId), limit);
+        return postService.findLikers(id, Pagination.after(afterId), limit);
     }
 
     @PutMapping("/{id}/likes")

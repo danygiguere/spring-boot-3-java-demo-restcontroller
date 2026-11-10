@@ -73,7 +73,6 @@ class SecurityTest extends IntegrationTest {
                 .issuer(properties.issuer())
                 .audience(List.of(properties.audience()))
                 .subject("1")
-                .claim(AuthenticatedUser.ENTERPRISE_ID_CLAIM, 1)
                 .build();
         expectStatus(sign(properties.secret(), claims), 401);
     }
@@ -87,13 +86,12 @@ class SecurityTest extends IntegrationTest {
     void unsignedAlgNoneToken_returns401() {
         Base64.Encoder base64 = Base64.getUrlEncoder().withoutPadding();
         String header = base64.encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8));
-        String payload =
-                base64.encodeToString(("{\"sub\":\"1\",\"enterpriseId\":1,\"iss\":\"%s\",\"aud\":\"%s\",\"exp\":%d}")
-                        .formatted(
-                                properties.issuer(),
-                                properties.audience(),
-                                Instant.now().plusSeconds(600).getEpochSecond())
-                        .getBytes(StandardCharsets.UTF_8));
+        String payload = base64.encodeToString(("{\"sub\":\"1\",\"iss\":\"%s\",\"aud\":\"%s\",\"exp\":%d}")
+                .formatted(
+                        properties.issuer(),
+                        properties.audience(),
+                        Instant.now().plusSeconds(600).getEpochSecond())
+                .getBytes(StandardCharsets.UTF_8));
         expectStatus(header + "." + payload + ".", 401);
     }
 
@@ -142,8 +140,7 @@ class SecurityTest extends IntegrationTest {
                 .audience(List.of(properties.audience()))
                 .subject("1")
                 .issuedAt(now)
-                .expiresAt(now.plusSeconds(600))
-                .claim(AuthenticatedUser.ENTERPRISE_ID_CLAIM, 1);
+                .expiresAt(now.plusSeconds(600));
     }
 
     private String signed(Consumer<JwtClaimsSet.Builder> customizer) {

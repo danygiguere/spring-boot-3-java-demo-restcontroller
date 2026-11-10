@@ -18,14 +18,12 @@ class UserControllerTest extends IntegrationTest {
                 .expectBody()
                 .jsonPath("$.id")
                 .isEqualTo(1)
-                .jsonPath("$.enterpriseId")
-                .isEqualTo(1)
                 .jsonPath("$.email")
                 .isEqualTo(ALICE);
     }
 
     @Test
-    void list_isScopedToCallersEnterpriseAndPaginated() {
+    void list_isKeysetPaginated() {
         as(ALICE)
                 .get()
                 .uri("/users?afterId=1&limit=3")
@@ -39,20 +37,9 @@ class UserControllerTest extends IntegrationTest {
                 .isEqualTo(2)
                 .jsonPath("$[2].id")
                 .isEqualTo(4)
-                // Colleagues are listed without their email.
+                // Other users are listed without their email.
                 .jsonPath("$[0].email")
                 .doesNotExist();
-
-        as(EVE).get()
-                .uri("/users?limit=100")
-                .exchange()
-                .expectStatus()
-                .isOk()
-                .expectBody()
-                .jsonPath("$.length()")
-                .isEqualTo(10)
-                .jsonPath("$[0].id")
-                .isEqualTo(11);
     }
 
     @Test
@@ -71,10 +58,10 @@ class UserControllerTest extends IntegrationTest {
     }
 
     @Test
-    void findById_userOfAnotherEnterprise_isNotFoundWithLocalizedDetail() {
+    void findById_unknownUser_isNotFoundWithLocalizedDetail() {
         as(ALICE)
                 .get()
-                .uri("/users/11")
+                .uri("/users/999999")
                 .header("Accept-Language", "fr")
                 .exchange()
                 .expectStatus()
@@ -83,9 +70,9 @@ class UserControllerTest extends IntegrationTest {
                 .jsonPath("$.type")
                 .isEqualTo("/errors/user-not-found")
                 .jsonPath("$.detail")
-                .isEqualTo("Utilisateur 11 introuvable")
+                .isEqualTo("Utilisateur 999999 introuvable")
                 .jsonPath("$.instance")
-                .isEqualTo("/users/11");
+                .isEqualTo("/users/999999");
     }
 
     @Test
@@ -104,7 +91,7 @@ class UserControllerTest extends IntegrationTest {
     }
 
     @Test
-    void profile_isReadableByColleagues() {
+    void profile_isReadableByOtherUsers() {
         as(BOB).get()
                 .uri("/users/1/profile")
                 .exchange()
@@ -119,10 +106,9 @@ class UserControllerTest extends IntegrationTest {
 
     @Test
     void replaceMyProfile_upsertsTheCallersProfileOnly() {
-        WebTestClient colleague = as(COLLEAGUE);
+        WebTestClient user = as(OTHER_USER);
         for (int attempt = 0; attempt < 2; attempt++) {
-            colleague
-                    .put()
+            user.put()
                     .uri("/users/me/profile")
                     .bodyValue(Map.of("bio", "Updated bio", "avatarUrl", "https://images.example.com/u4.png"))
                     .exchange()
@@ -138,7 +124,7 @@ class UserControllerTest extends IntegrationTest {
 
     @Test
     void replaceMyProfile_rejectsNonHttpsAvatar() {
-        as(COLLEAGUE)
+        as(OTHER_USER)
                 .put()
                 .uri("/users/me/profile")
                 .header("Accept-Language", "fr")
@@ -155,7 +141,7 @@ class UserControllerTest extends IntegrationTest {
 
     @Test
     void replaceMyProfile_rejectsUnknownFields() {
-        as(COLLEAGUE)
+        as(OTHER_USER)
                 .put()
                 .uri("/users/me/profile")
                 .bodyValue(Map.of("bio", "x", "userId", 1))
@@ -179,7 +165,43 @@ class UserControllerTest extends IntegrationTest {
     }
 
     @Test
-    void posts_ofUserInAnotherEnterprise_isNotFound() {
-        as(ALICE).get().uri("/users/11/posts").exchange().expectStatus().isNotFound();
+    void posts_ofUnknownUser_isNotFound() {
+        as(ALICE)
+                .get()
+                .uri("/users/999999/posts")
+                .exchange()
+                .expectStatus()
+                .isNotFound()
+                .expectBody()
+                .jsonPath("$.type")
+                .isEqualTo("/errors/user-not-found");
+    }
+
+    @Test
+    void images_areTheImagesOfTheUsersPostsNewestFirst() {
+        // Alice's posts 1 to 3 have 1, 2 and 3 images: ids 1 to 6.
+        as(BOB).get()
+                .uri("/users/1/images?beforeId=6&limit=3")
+                .exchange()
+                .expectStatus()
+                .isOk()
+                .expectBody()
+                .jsonPath("$[*].id")
+                .isEqualTo(java.util.List.of(5, 4, 3))
+                .jsonPath("$[*].postId")
+                .isEqualTo(java.util.List.of(3, 3, 2));
+    }
+
+    @Test
+    void images_ofUnknownUser_isNotFound() {
+        as(ALICE)
+                .get()
+                .uri("/users/999999/images")
+                .exchange()
+                .expectStatus()
+                .isNotFound()
+                .expectBody()
+                .jsonPath("$.type")
+                .isEqualTo("/errors/user-not-found");
     }
 }

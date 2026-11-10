@@ -4,8 +4,8 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * belongsTo {@link Enterprise}; hasOne {@link Profile}; hasMany {@link Post}; manyToMany {@link Post} through
- * {@link PostLike}. Never serialized directly: responses use DTOs that list their fields explicitly.
+ * hasOne {@link Profile}; hasMany {@link Post}; hasManyThrough {@link Image} (through posts); manyToMany {@link Post}
+ * through {@link PostLike}. Never serialized directly: responses use DTOs that list their fields explicitly.
  */
 @Table("users")
-public record User(@Id Long id, Long enterpriseId, String name, String email) {}
+public record User(@Id Long id, String name, String email) {}

@@ -3,7 +3,6 @@ package com.example.restcontrollerdemo.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.restcontrollerdemo.dto.PostDetails;
-import com.example.restcontrollerdemo.dto.PostSummary;
 import com.example.restcontrollerdemo.support.IntegrationTest;
 import java.util.List;
 import java.util.Map;
@@ -89,9 +88,9 @@ class PostControllerTest extends IntegrationTest {
     void create_sameKeyFromAnotherUser_isIndependent() {
         String key = UUID.randomUUID().toString();
         PostDetails byAuthor = create(as(AUTHOR), key, NEW_POST);
-        PostDetails byColleague = create(as(COLLEAGUE), key, NEW_POST);
+        PostDetails byOtherUser = create(as(OTHER_USER), key, NEW_POST);
 
-        assertThat(byColleague.id()).isNotEqualTo(byAuthor.id());
+        assertThat(byOtherUser.id()).isNotEqualTo(byAuthor.id());
     }
 
     @Test
@@ -215,25 +214,27 @@ class PostControllerTest extends IntegrationTest {
     }
 
     @Test
-    void findById_postOfAnotherEnterprise_isNotFound() {
+    void findById_isVisibleToEveryUser() {
         PostDetails post = create(as(AUTHOR), UUID.randomUUID().toString(), NEW_POST);
 
-        as(OUTSIDER)
+        as(OTHER_USER)
                 .get()
                 .uri("/posts/{id}", post.id())
                 .exchange()
                 .expectStatus()
-                .isNotFound()
+                .isOk()
                 .expectBody()
-                .jsonPath("$.type")
-                .isEqualTo("/errors/post-not-found");
+                .jsonPath("$.author.id")
+                .isEqualTo(3)
+                .jsonPath("$.images[*].postId")
+                .isEqualTo(List.of(post.id().intValue(), post.id().intValue()));
     }
 
     @Test
     void update_onlyByAuthor() {
         PostDetails post = create(as(AUTHOR), UUID.randomUUID().toString(), NEW_POST);
 
-        as(COLLEAGUE)
+        as(OTHER_USER)
                 .put()
                 .uri("/posts/{id}", post.id())
                 .bodyValue(Map.of("content", "Hijacked"))
@@ -264,7 +265,7 @@ class PostControllerTest extends IntegrationTest {
         String key = UUID.randomUUID().toString();
         PostDetails post = create(author, key, NEW_POST);
 
-        as(COLLEAGUE)
+        as(OTHER_USER)
                 .delete()
                 .uri("/posts/{id}", post.id())
                 .exchange()
@@ -288,22 +289,11 @@ class PostControllerTest extends IntegrationTest {
     @Test
     void likeAndUnlike_areIdempotent() {
         PostDetails post = create(as(AUTHOR), UUID.randomUUID().toString(), NEW_POST);
-        WebTestClient colleague = as(COLLEAGUE);
+        WebTestClient user = as(OTHER_USER);
 
-        colleague
-                .put()
-                .uri("/posts/{id}/likes", post.id())
-                .exchange()
-                .expectStatus()
-                .isNoContent();
-        colleague
-                .put()
-                .uri("/posts/{id}/likes", post.id())
-                .exchange()
-                .expectStatus()
-                .isNoContent();
-        colleague
-                .get()
+        user.put().uri("/posts/{id}/likes", post.id()).exchange().expectStatus().isNoContent();
+        user.put().uri("/posts/{id}/likes", post.id()).exchange().expectStatus().isNoContent();
+        user.get()
                 .uri("/posts/{id}/likes", post.id())
                 .exchange()
                 .expectStatus()
@@ -312,20 +302,17 @@ class PostControllerTest extends IntegrationTest {
                 .jsonPath("$[*].id")
                 .isEqualTo(List.of(4));
 
-        colleague
-                .delete()
+        user.delete()
                 .uri("/posts/{id}/likes", post.id())
                 .exchange()
                 .expectStatus()
                 .isNoContent();
-        colleague
-                .delete()
+        user.delete()
                 .uri("/posts/{id}/likes", post.id())
                 .exchange()
                 .expectStatus()
                 .isNoContent();
-        colleague
-                .get()
+        user.get()
                 .uri("/posts/{id}", post.id())
                 .exchange()
                 .expectStatus()
@@ -336,15 +323,16 @@ class PostControllerTest extends IntegrationTest {
     }
 
     @Test
-    void like_postOfAnotherEnterprise_isNotFound() {
-        PostDetails post = create(as(AUTHOR), UUID.randomUUID().toString(), NEW_POST);
-
-        as(OUTSIDER)
+    void like_missingPost_isNotFound() {
+        as(OTHER_USER)
                 .put()
-                .uri("/posts/{id}/likes", post.id())
+                .uri("/posts/999999/likes")
                 .exchange()
                 .expectStatus()
-                .isNotFound();
+                .isNotFound()
+                .expectBody()
+                .jsonPath("$.type")
+                .isEqualTo("/errors/post-not-found");
     }
 
     @Test
@@ -370,18 +358,18 @@ class PostControllerTest extends IntegrationTest {
     }
 
     @Test
-    void feed_isScopedToCallersEnterprise() {
-        List<PostSummary> page = as(EVE).get()
-                .uri("/posts?limit=100")
+    void feed_includesEveryUsersPosts() {
+        as(ALICE)
+                .get()
+                .uri("/posts?beforeId=6&limit=3")
                 .exchange()
                 .expectStatus()
                 .isOk()
-                .expectBodyList(PostSummary.class)
-                .returnResult()
-                .getResponseBody();
-
-        assertThat(page).isNotEmpty();
-        assertThat(page).allSatisfy(post -> assertThat(post.author().id()).isBetween(11L, 20L));
+                .expectBody()
+                .jsonPath("$[*].id")
+                .isEqualTo(List.of(5, 4, 3))
+                .jsonPath("$[*].author.name")
+                .isEqualTo(List.of("Bob", "Alice", "Alice"));
     }
 
     @Test

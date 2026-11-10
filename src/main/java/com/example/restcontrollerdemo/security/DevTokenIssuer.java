@@ -48,7 +48,6 @@ public class DevTokenIssuer {
                 .subject(user.id().toString())
                 .issuedAt(now)
                 .expiresAt(now.plus(properties.ttl()))
-                .claim(AuthenticatedUser.ENTERPRISE_ID_CLAIM, user.enterpriseId())
                 .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
         String token = encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();

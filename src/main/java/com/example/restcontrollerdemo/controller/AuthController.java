@@ -28,8 +28,7 @@ public class AuthController {
     @Operation(
             operationId = "devToken",
             summary = "Get a token for a seeded user, without password",
-            description = "Seeded users: alice@example.com, bob@example.com (enterprise 1), "
-                    + "eve@example.com (enterprise 2).")
+            description = "Seeded users: alice@example.com, bob@example.com, user3@example.com to user50@example.com.")
     public TokenResponse devToken(@Valid @RequestBody DevTokenRequest request) {
         return devTokenService.issue(request.email());
     }

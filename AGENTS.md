@@ -21,8 +21,8 @@ Spring Boot 3 + Java demo built on a **blocking** stack (Spring MVC, Spring Data
 **Stack:** Java 21 · Spring Boot 3.5 · Spring MVC · Spring Security (OAuth2 resource server, JWT) · Spring Data JDBC ·
 PostgreSQL · Flyway · Springdoc/OpenAPI · Testcontainers
 
-**Data model:** `Enterprise` 1—N `User` 1—1 `Profile`; `User` 1—N `Post` 1—N `Image`; `User` N—N `Post` via
-`post_likes`. The enterprise is the tenant.
+**Data model:** `User` 1—1 `Profile`; `User` 1—N `Post` 1—N `Image`; `User` N—N `Post` via `post_likes`. Single
+tenant: every resource is readable by every authenticated user.
 
 ## Commands
 
@@ -57,26 +57,26 @@ Controller (@RestController + OpenAPI, validation)  →  Service (business logic
   `ResponseEntity<Dto>` when headers are needed). Take the caller as an `AuthenticatedUser me` parameter
   (`AuthenticatedUserArgumentResolver`; hidden from OpenAPI). Bodies use `@Valid @RequestBody`; params carry
   constraints with an explicit `message` key (`@Positive(message = "{param.positive}")`). No business logic.
-- **Service** (`service/`) — `@Service`. Business logic, tenant scoping and permission checks. Returns DTOs;
+- **Service** (`service/`) — `@Service`. Business logic and permission checks. Returns DTOs;
   throws `AppException.*`. Multi-table writes go through `TransactionTemplate`.
 - **Repository** (`repository/`) — `ListCrudRepository<Entity, Long>` + `@Query` (Spring Data JDBC); single
   results are `Optional`. A `@Query` INSERT … RETURNING is annotated `@Transactional` (query methods are read-only).
-  Tenant-facing queries take the caller's `enterpriseId`; writes take the owner's `userId` in the WHERE clause and
+  Writes take the owner's `userId` in the WHERE clause and
   return the affected row count.
 - **Entity** (`domain/entity/`) — `record` with `@Table` and `@Id Long id` (null before insert). Never serialized.
 - **DTO** (`dto/`) — request records (validated input, explicit writable fields) and response records (explicit
   exposed fields). No response envelope; lists are JSON arrays with keyset pagination.
 
 Blocking rules: requests run on virtual threads (`spring.threads.virtual.enabled`); avoid `synchronized` around
-blocking I/O (it pins the carrier thread). Related data for a list is loaded in bulk (`IN (:ids)`, bounded by the page
-limit) and joined through maps (`PostSummaryLoader`). Keep transactions short: read replays after commit.
+blocking I/O (it pins the carrier thread). A list page and its related data (author, counts) come from one query into a
+flat row (`PostSummaryRow`). Keep transactions short: read replays after commit.
 
 ## Security model
 
 - Every route is authenticated except `SecurityConfig.PUBLIC_PATHS`. Deny by default.
-- The caller is `AuthenticatedUser` (`sub` → `userId`, `enterpriseId` claim) from a verified JWT. Never take a user or
-  enterprise id from the request for authorization or ownership.
-- Out-of-tenant resources are **404**; in-tenant resources the caller may not change are **403**.
+- The caller is `AuthenticatedUser` (`sub` → `userId`) from a verified JWT. Never take a user id from the request for
+  authorization or ownership.
+- Missing resources are **404**; resources the caller may not change are **403**.
 - No Spring profiles: one `application.yml`, env vars with production-safe defaults (`.env` locally). Local-only
   features are opt-in: `FLYWAY_LOCATIONS` (seed), `SWAGGER_ENABLED`, `DEV_TOKEN_ENABLED` (`@DevTokenEnabled`; startup
   fails unless `SERVER_ADDRESS` is loopback). `JWT_SECRET` has no default.
@@ -86,13 +86,13 @@ limit) and joined through maps (`PostSummaryLoader`). Keep transactions short: r
 - Integration tests extend `support/IntegrationTest`: one reusable PostgreSQL Testcontainer, the local settings as
   `@SpringBootTest` properties (seed + dev tokens + Swagger), `RANDOM_PORT` with `WebTestClient`.
 - `as(email)` returns a client authenticated as a seeded user.
-- Tests that write create their own posts as users 3, 4 and 12; never change seeded posts/likes or users 1, 2, 11, so
+- Tests that write create their own posts as users 3 and 4; never change seeded posts/likes or users 1 and 2, so
   seed-based assertions hold in any order.
 - Validation messages are localized at validation time (Spring MVC binds the request locale to the thread); keep a
   French test for each validation path.
 - Tests use `WebTestClient` against the running server (`spring-webflux` is a test-only dependency).
 - Assert status and the problem JSON (`$.type`, `$.status`, `$.errors.<field>`, `$.correlationId`); cover the success
-  path, validation errors, and the cross-tenant / not-owner paths.
+  path, validation errors, and the not-found / not-owner paths.
 
 # Engineering audit digest
 

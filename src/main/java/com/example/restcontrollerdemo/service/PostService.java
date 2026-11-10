@@ -32,8 +32,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Posts are visible to the author's enterprise and writable by the author only. Both checks happen here, at the point
- * of action, from the verified token — never from ids in the request body.
+ * Posts are visible to every user and writable by the author only. The author check happens here, at the point of
+ * action, from the verified token — never from ids in the request body.
  */
 @Service
 public class PostService {
@@ -44,7 +44,6 @@ public class PostService {
     private final UserRepository userRepository;
     private final IdempotencyKeyRepository idempotencyKeyRepository;
     private final UserService userService;
-    private final PostSummaryLoader summaryLoader;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
 
@@ -55,7 +54,6 @@ public class PostService {
             UserRepository userRepository,
             IdempotencyKeyRepository idempotencyKeyRepository,
             UserService userService,
-            PostSummaryLoader summaryLoader,
             TransactionTemplate transactionTemplate,
             Clock clock) {
         this.postRepository = postRepository;
@@ -64,49 +62,52 @@ public class PostService {
         this.userRepository = userRepository;
         this.idempotencyKeyRepository = idempotencyKeyRepository;
         this.userService = userService;
-        this.summaryLoader = summaryLoader;
         this.transactionTemplate = transactionTemplate;
         this.clock = clock;
     }
 
     // --- Reads ----------------------------------------------------------------------------------------------------
 
-    public List<PostSummary> feed(AuthenticatedUser me, long beforeId, int limit) {
-        return summaryLoader.load(postRepository.findFeed(me.enterpriseId(), beforeId, limit), me.enterpriseId());
+    public List<PostSummary> feed(long beforeId, int limit) {
+        return postRepository.findFeed(beforeId, limit).stream()
+                .map(PostSummary::of)
+                .toList();
     }
 
-    public List<PostSummary> findByAuthor(AuthenticatedUser me, long userId, long beforeId, int limit) {
-        userService.requireColleague(me, userId);
-        return summaryLoader.load(
-                postRepository.findByAuthor(userId, me.enterpriseId(), beforeId, limit), me.enterpriseId());
+    public List<PostSummary> findByAuthor(long userId, long beforeId, int limit) {
+        userService.requireUser(userId);
+        return postRepository.findByAuthor(userId, beforeId, limit).stream()
+                .map(PostSummary::of)
+                .toList();
     }
 
-    public List<PostSummary> findLikedBy(AuthenticatedUser me, long userId, long beforeId, int limit) {
-        userService.requireColleague(me, userId);
-        return summaryLoader.load(
-                postRepository.findLikedBy(userId, me.enterpriseId(), beforeId, limit), me.enterpriseId());
+    public List<PostSummary> findLikedBy(long userId, long beforeId, int limit) {
+        userService.requireUser(userId);
+        return postRepository.findLikedBy(userId, beforeId, limit).stream()
+                .map(PostSummary::of)
+                .toList();
     }
 
     /** The post, its author, images and like count: four short indexed queries, one after the other. */
-    public PostDetails findById(AuthenticatedUser me, long id) {
-        Post post = requireVisible(me, id);
+    public PostDetails findById(long id) {
+        Post post = requirePost(id);
         return PostDetails.of(
                 post,
-                userService.requireColleague(me, post.userId()),
+                userService.requireUser(post.userId()),
                 imageRepository.findAllByPostIdOrderByPositionAsc(id),
                 postLikeRepository.countByPostId(id));
     }
 
-    public List<ImageResponse> findImages(AuthenticatedUser me, long id) {
-        requireVisible(me, id);
+    public List<ImageResponse> findImages(long id) {
+        requirePost(id);
         return imageRepository.findAllByPostIdOrderByPositionAsc(id).stream()
                 .map(ImageResponse::of)
                 .toList();
     }
 
-    public List<UserResponse> findLikers(AuthenticatedUser me, long id, long afterId, int limit) {
-        requireVisible(me, id);
-        return userRepository.findLikersInEnterprise(id, me.enterpriseId(), afterId, limit).stream()
+    public List<UserResponse> findLikers(long id, long afterId, int limit) {
+        requirePost(id);
+        return userRepository.findLikers(id, afterId, limit).stream()
                 .map(UserResponse::of)
                 .toList();
     }
@@ -137,7 +138,7 @@ public class PostService {
         // The replayed post is read after the transaction ends, so the transaction stays as short as possible.
         return switch (claim) {
             case Claim.Inserted inserted -> new CreatedPost(inserted.post(), false);
-            case Claim.AlreadyCreated replay -> new CreatedPost(findById(me, replay.postId()), true);
+            case Claim.AlreadyCreated replay -> new CreatedPost(findById(replay.postId()), true);
         };
     }
 
@@ -154,7 +155,7 @@ public class PostService {
         if (postRepository.updateContent(id, me.userId(), request.content()) != 1) {
             throw postNotFound(id);
         }
-        return findById(me, id);
+        return findById(id);
     }
 
     /** Only the author may delete. Images and likes go with the post (ON DELETE CASCADE). */
@@ -167,25 +168,25 @@ public class PostService {
 
     /** Idempotent: liking twice keeps one like. */
     public void like(AuthenticatedUser me, long id) {
-        requireVisible(me, id);
+        requirePost(id);
         try {
             postLikeRepository.likeIfAbsent(id, me.userId());
         } catch (DataIntegrityViolationException e) {
-            // The post was deleted between the visibility check and the insert (foreign key violation).
+            // The post was deleted between the existence check and the insert (foreign key violation).
             throw new AppException.NotFound(e, "error.post.not.found", id);
         }
     }
 
     /** Idempotent: unliking a post that is not liked changes nothing. */
     public void unlike(AuthenticatedUser me, long id) {
-        requireVisible(me, id);
+        requirePost(id);
         postLikeRepository.unlike(id, me.userId());
     }
 
     // --- Helpers --------------------------------------------------------------------------------------------------
 
     private PostDetails insertPost(AuthenticatedUser me, CreatePostRequest request, Instant now) {
-        User author = userService.requireColleague(me, me.userId());
+        User author = userService.requireUser(me.userId());
         Post post = postRepository.save(new Post(null, author.id(), request.content(), now));
         List<Image> images = imageRepository.saveAll(toImages(post.id(), request.imageUrls()));
         return PostDetails.of(post, author, images, 0);
@@ -225,13 +226,13 @@ public class PostService {
         builder.append(value.length()).append(':').append(value);
     }
 
-    private Post requireVisible(AuthenticatedUser me, long id) {
-        return postRepository.findVisible(id, me.enterpriseId()).orElseThrow(() -> postNotFound(id));
+    private Post requirePost(long id) {
+        return postRepository.findById(id).orElseThrow(() -> postNotFound(id));
     }
 
-    /** Visible but not authored by the caller is a 403: the post's existence is no secret within the enterprise. */
+    /** Not authored by the caller is a 403: every post is visible, so its existence is no secret. */
     private Post requireAuthor(AuthenticatedUser me, long id) {
-        Post post = requireVisible(me, id);
+        Post post = requirePost(id);
         if (!post.userId().equals(me.userId())) {
             throw new AppException.Forbidden("error.post.not.author", id);
         }

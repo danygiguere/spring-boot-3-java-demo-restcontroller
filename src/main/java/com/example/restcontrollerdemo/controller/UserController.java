@@ -1,5 +1,6 @@
 package com.example.restcontrollerdemo.controller;
 
+import com.example.restcontrollerdemo.dto.ImageResponse;
 import com.example.restcontrollerdemo.dto.MeResponse;
 import com.example.restcontrollerdemo.dto.PostSummary;
 import com.example.restcontrollerdemo.dto.ProfileRequest;
@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/users")
-@Tag(name = "Users", description = "Users of the caller's enterprise only")
+@Tag(name = "Users")
 public class UserController {
 
     private final UserService userService;
@@ -49,50 +50,57 @@ public class UserController {
     }
 
     @GetMapping
-    @Operation(operationId = "getUsers", summary = "List users of the caller's enterprise, oldest first")
+    @Operation(operationId = "getUsers", summary = "List users, oldest first")
     public List<UserResponse> findAll(
-            AuthenticatedUser me,
             @RequestParam(required = false) @PositiveOrZero(message = "{param.positiveOrZero}") Long afterId,
             @RequestParam(defaultValue = Pagination.DEFAULT_LIMIT)
                     @Range(min = 1, max = Pagination.MAX_LIMIT, message = "{param.limit.range}")
                     int limit) {
-        return userService.findAll(me, Pagination.after(afterId), limit);
+        return userService.findAll(Pagination.after(afterId), limit);
     }
 
     @GetMapping("/{id}")
-    @Operation(operationId = "getUserById", summary = "Get a user of the caller's enterprise")
-    public UserResponse findById(AuthenticatedUser me, @PathVariable @Positive(message = "{param.positive}") long id) {
-        return userService.findById(me, id);
+    @Operation(operationId = "getUserById", summary = "Get a user (no email)")
+    public UserResponse findById(@PathVariable @Positive(message = "{param.positive}") long id) {
+        return userService.findById(id);
     }
 
     @GetMapping("/{id}/profile")
     @Operation(operationId = "getUserProfile", summary = "Get a user's profile (hasOne)")
-    public ProfileResponse findProfile(
-            AuthenticatedUser me, @PathVariable @Positive(message = "{param.positive}") long id) {
-        return userService.findProfile(me, id);
+    public ProfileResponse findProfile(@PathVariable @Positive(message = "{param.positive}") long id) {
+        return userService.findProfile(id);
     }
 
     @GetMapping("/{id}/posts")
     @Operation(operationId = "getUserPosts", summary = "List a user's posts, newest first (hasMany)")
     public List<PostSummary> findPosts(
-            AuthenticatedUser me,
             @PathVariable @Positive(message = "{param.positive}") long id,
             @RequestParam(required = false) @Positive(message = "{param.positive}") Long beforeId,
             @RequestParam(defaultValue = Pagination.DEFAULT_LIMIT)
                     @Range(min = 1, max = Pagination.MAX_LIMIT, message = "{param.limit.range}")
                     int limit) {
-        return postService.findByAuthor(me, id, Pagination.before(beforeId), limit);
+        return postService.findByAuthor(id, Pagination.before(beforeId), limit);
     }
 
     @GetMapping("/{id}/liked-posts")
     @Operation(operationId = "getUserLikedPosts", summary = "List posts a user likes, newest first (manyToMany)")
     public List<PostSummary> findLikedPosts(
-            AuthenticatedUser me,
             @PathVariable @Positive(message = "{param.positive}") long id,
             @RequestParam(required = false) @Positive(message = "{param.positive}") Long beforeId,
             @RequestParam(defaultValue = Pagination.DEFAULT_LIMIT)
                     @Range(min = 1, max = Pagination.MAX_LIMIT, message = "{param.limit.range}")
                     int limit) {
-        return postService.findLikedBy(me, id, Pagination.before(beforeId), limit);
+        return postService.findLikedBy(id, Pagination.before(beforeId), limit);
+    }
+
+    @GetMapping("/{id}/images")
+    @Operation(operationId = "getUserImages", summary = "List images of a user's posts, newest first (hasManyThrough)")
+    public List<ImageResponse> findImages(
+            @PathVariable @Positive(message = "{param.positive}") long id,
+            @RequestParam(required = false) @Positive(message = "{param.positive}") Long beforeId,
+            @RequestParam(defaultValue = Pagination.DEFAULT_LIMIT)
+                    @Range(min = 1, max = Pagination.MAX_LIMIT, message = "{param.limit.range}")
+                    int limit) {
+        return userService.findImages(id, Pagination.before(beforeId), limit);
     }
 }
