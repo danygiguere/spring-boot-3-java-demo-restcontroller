@@ -1,5 +1,7 @@
 package com.example.restcontrollerdemo.service;
 
+import static com.example.restcontrollerdemo.concurrent.Futures.await;
+
 import com.example.restcontrollerdemo.domain.entity.IdempotencyKey;
 import com.example.restcontrollerdemo.domain.entity.Image;
 import com.example.restcontrollerdemo.domain.entity.Post;
@@ -26,7 +28,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.IntStream;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -46,6 +51,7 @@ public class PostService {
     private final UserService userService;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
+    private final AsyncTaskExecutor queryExecutor;
 
     public PostService(
             PostRepository postRepository,
@@ -55,7 +61,8 @@ public class PostService {
             IdempotencyKeyRepository idempotencyKeyRepository,
             UserService userService,
             TransactionTemplate transactionTemplate,
-            Clock clock) {
+            Clock clock,
+            @Qualifier("applicationTaskExecutor") AsyncTaskExecutor queryExecutor) {
         this.postRepository = postRepository;
         this.imageRepository = imageRepository;
         this.postLikeRepository = postLikeRepository;
@@ -64,6 +71,7 @@ public class PostService {
         this.userService = userService;
         this.transactionTemplate = transactionTemplate;
         this.clock = clock;
+        this.queryExecutor = queryExecutor;
     }
 
     // --- Reads ----------------------------------------------------------------------------------------------------
@@ -88,14 +96,20 @@ public class PostService {
                 .toList();
     }
 
-    /** The post, its author, images and like count: four short indexed queries, one after the other. */
+    /**
+     * The post, then its author, images and like count in parallel (virtual threads, one connection each). Must not
+     * run inside a transaction: the parallel queries would not see its uncommitted rows.
+     */
     public PostDetails findById(long id) {
         Post post = requirePost(id);
-        return PostDetails.of(
-                post,
-                userService.requireUser(post.userId()),
-                imageRepository.findAllByPostIdOrderByPositionAsc(id),
-                postLikeRepository.countByPostId(id));
+        CompletableFuture<User> author =
+                CompletableFuture.supplyAsync(() -> userService.requireUser(post.userId()), queryExecutor);
+        CompletableFuture<List<Image>> images = CompletableFuture.supplyAsync(
+                () -> imageRepository.findAllByPostIdOrderByPositionAsc(id), queryExecutor);
+        CompletableFuture<Long> likeCount =
+                CompletableFuture.supplyAsync(() -> postLikeRepository.countByPostId(id), queryExecutor);
+        await(CompletableFuture.allOf(author, images, likeCount)); // none left running when one fails
+        return PostDetails.of(post, await(author), await(images), await(likeCount));
     }
 
     public List<ImageResponse> findImages(long id) {
